@@ -11,9 +11,9 @@
   udev,
   crane,
   writeShellScriptBin,
-  version ? "0.31.1",
-}:
-let
+  perl,
+  version ? "0.32.1",
+}: let
   pname = "anchor-cli";
 
   # Anchor IDL generation makes use of rust-nightly
@@ -22,27 +22,34 @@ let
   # latest nightly is always preferred when possible, since breakage may occur
   # due to differing dependency versions as well
   versionsDeps = {
+    "0.32.1" = {
+      hash = "sha256-7YOPbMuhdssROoSG6wvwKaCFRF2ZgRLG7kwHZoY+gys=";
+      rust = rust-bin.stable."1.89.0".default;
+      rust-nightly = rust-bin.nightly.latest.default;
+      platform-tools = solana-platform-tools.override {version = "1.48";};
+      patches = [];
+    };
     "0.31.1" = {
       hash = "sha256-c+UybdZCFL40TNvxn0PHR1ch7VPhhJFDSIScetRpS3o=";
       rust = rust-bin.stable."1.85.0".default;
       rust-nightly = rust-bin.nightly.latest.default;
-      platform-tools = solana-platform-tools.override { version = "1.45"; };
-      patches = [ ./patches/anchor-cli/0.31.1.patch ];
+      platform-tools = solana-platform-tools.override {version = "1.45";};
+      patches = [./patches/anchor-cli/0.31.1.patch];
     };
     "0.31.0" = {
       hash = "sha256-CaBVdp7RPVmzzEiVazjpDLJxEkIgy1BHCwdH2mYLbGM=";
       rust = rust-bin.stable."1.85.0".default;
       rust-nightly = rust-bin.nightly.latest.default;
-      platform-tools = solana-platform-tools.override { version = "1.45"; };
-      patches = [ ./patches/anchor-cli/0.31.0.patch ];
+      platform-tools = solana-platform-tools.override {version = "1.45";};
+      patches = [./patches/anchor-cli/0.31.0.patch];
     };
     "0.30.1" = {
       hash = "sha256-3fLYTJDVCJdi6o0Zd+hb9jcPDKm4M4NzpZ8EUVW/GVw=";
       rust = rust-bin.stable."1.78.0".default;
       # anchor-syn v0.30.1 still uses the old API
       rust-nightly = rust-bin.nightly."2025-04-15".default;
-      platform-tools = solana-platform-tools.override { version = "1.43"; };
-      patches = [ ./patches/anchor-cli/0.30.1.patch ];
+      platform-tools = solana-platform-tools.override {version = "1.43";};
+      patches = [./patches/anchor-cli/0.30.1.patch];
     };
   };
   versionDeps = versionsDeps.${version};
@@ -87,11 +94,12 @@ let
       protobuf
       pkg-config
       makeWrapper
+      perl
     ];
     buildInputs =
-      [ ]
-      ++ lib.optionals stdenv.isLinux [ udev ]
-      ++ lib.optional stdenv.isDarwin [ darwin.apple_sdk.frameworks.CoreFoundation ];
+      []
+      ++ lib.optionals stdenv.isLinux [udev]
+      ++ lib.optional stdenv.isDarwin [darwin.apple_sdk.frameworks.CoreFoundation];
   };
 
   cargoArtifacts = craneLib.buildDepsOnly commonArgs;
@@ -115,30 +123,30 @@ let
     fi
   '';
 in
-craneLib.buildPackage (
-  commonArgs
-  // {
-    inherit cargoArtifacts;
+  craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
 
-    # Ensure anchor has access to Solana's rust binaries and our cargo shim with nightly
-    postInstall = ''
-      rust=${versionDeps.platform-tools}/bin/platform-tools-sdk/sbf/dependencies/platform-tools/rust/bin
-      wrapProgram $out/bin/anchor \
-        --prefix PATH : "${cargoShim}/bin" \
-        --set _NIX_SUPPORT_STABLE_TOOLCHAIN "$rust" \
-        --set _NIX_SUPPORT_NIGHTLY_TOOLCHAIN "${versionDeps.rust-nightly}/bin"
-    '';
+      # Ensure anchor has access to Solana's rust binaries and our cargo shim with nightly
+      postInstall = ''
+        rust=${versionDeps.platform-tools}/bin/platform-tools-sdk/sbf/dependencies/platform-tools/rust/bin
+        wrapProgram $out/bin/anchor \
+          --prefix PATH : "${cargoShim}/bin" \
+          --set _NIX_SUPPORT_STABLE_TOOLCHAIN "$rust" \
+          --set _NIX_SUPPORT_NIGHTLY_TOOLCHAIN "${versionDeps.rust-nightly}/bin"
+      '';
 
-    cargoExtraArgs = "-p ${pname}";
+      cargoExtraArgs = "-p ${pname}";
 
-    meta = {
-      mainProgram = "anchor";
-      description = "Anchor cli";
-    };
+      meta = {
+        mainProgram = "anchor";
+        description = "Anchor cli";
+      };
 
-    passthru = {
-      otherVersions = builtins.attrNames versionsDeps;
-      rustNightly = versionDeps.rust-nightly._version;
-    };
-  }
-)
+      passthru = {
+        otherVersions = builtins.attrNames versionsDeps;
+        rustNightly = versionDeps.rust-nightly._version;
+      };
+    }
+  )

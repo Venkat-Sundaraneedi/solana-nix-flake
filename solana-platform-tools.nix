@@ -12,10 +12,8 @@
   udev,
   xz,
   zlib,
-  system ? builtins.currentSystem,
   version ? "1.48",
-}:
-let
+}: let
   systemMapping = {
     x86_64-linux = "linux-x86_64";
     aarch64-linux = "linux-aarch64";
@@ -48,70 +46,75 @@ let
     };
   };
   # The system string is inverted, and each bundle has a different hash
-  releaseSystem = systemMapping."${system}";
-  releaseHash = versionMapping."${version}"."${system}";
+  releaseSystem = systemMapping."${stdenv.hostPlatform.system}";
+  releaseHash = versionMapping."${version}"."${stdenv.hostPlatform.system}";
 in
-stdenv.mkDerivation rec {
-  pname = "solana-platform-tools";
-  inherit version;
+  stdenv.mkDerivation rec {
+    pname = "solana-platform-tools";
+    inherit version;
 
-  src = fetchzip {
-    url = "https://github.com/anza-xyz/platform-tools/releases/download/v${version}/platform-tools-${releaseSystem}.tar.bz2";
-    hash = releaseHash;
-    stripRoot = false;
-  };
+    src = fetchzip {
+      url = "https://github.com/anza-xyz/platform-tools/releases/download/v${version}/platform-tools-${releaseSystem}.tar.bz2";
+      hash = releaseHash;
+      stripRoot = false;
+    };
 
-  doCheck = false;
+    doCheck = false;
 
-  # https://github.com/NixOS/nixpkgs/issues/380196#issuecomment-2646189651
-  dontCheckForBrokenSymlinks = true;
+    # https://github.com/NixOS/nixpkgs/issues/380196#issuecomment-2646189651
+    dontCheckForBrokenSymlinks = true;
 
-  nativeBuildInputs = lib.optionals stdenv.isLinux [ autoPatchelfHook ];
+    nativeBuildInputs = lib.optionals stdenv.isLinux [autoPatchelfHook];
 
-  buildInputs = [
-    # Auto patching
-    libedit
-    zlib
-    stdenv.cc.cc
-    libclang.lib
-    xz
-    python310
-  ] ++ lib.optionals stdenv.isLinux [ openssl udev ];
+    # Ignore missing libxml2 dependency for LLDB (optional)
+    autoPatchelfIgnoreMissingDeps = lib.optionals stdenv.isLinux ["libxml2.so.2"];
 
-  installPhase = ''
-    platformtools=$out/bin/platform-tools-sdk/sbf/dependencies/platform-tools
-    mkdir -p $platformtools
-    cp -r $src/llvm $platformtools
-    cp -r $src/rust $platformtools
-    chmod 0755 -R $out
-    touch $platformtools-${version}.md
+    buildInputs =
+      [
+        # Auto patching
+        libedit
+        zlib
+        stdenv.cc.cc
+        libclang.lib
+        xz
+        python310
+      ]
+      ++ lib.optionals stdenv.isLinux [openssl udev];
 
-    # Criterion is also needed
-    criterion=$out/bin/platform-tools-sdk/sbf/dependencies/criterion
-    mkdir $criterion
-    ln -s ${criterion.dev}/include $criterion/include
-    ln -s ${criterion}/lib $criterion/lib
-    ln -s ${criterion}/share $criterion/share
-    touch $criterion-v${criterion.version}.md
+    installPhase = ''
+      platformtools=$out/bin/platform-tools-sdk/sbf/dependencies/platform-tools
+      mkdir -p $platformtools
+      cp -r $src/llvm $platformtools
+      cp -r $src/rust $platformtools
+      chmod 0755 -R $out
+      touch $platformtools-${version}.md
 
-    cp -ar ${solana-source.src}/platform-tools-sdk/sbf/* $out/bin/platform-tools-sdk/sbf/
-  '';
+      # Criterion is also needed
+      criterion=$out/bin/platform-tools-sdk/sbf/dependencies/criterion
+      mkdir $criterion
+      ln -s ${criterion.dev}/include $criterion/include
+      ln -s ${criterion}/lib $criterion/lib
+      ln -s ${criterion}/share $criterion/share
+      touch $criterion-v${criterion.version}.md
 
-  # A bit ugly, but liblldb.so uses libedit.so.2 and nix provides libedit.so
-  postFixup = lib.optionals stdenv.isLinux ''
-    patchelf --replace-needed libedit.so.2 libedit.so $out/bin/platform-tools-sdk/sbf/dependencies/platform-tools/llvm/lib/liblldb.so.19.1.7-rust-dev
-  '';
+      cp -ar ${solana-source.src}/platform-tools-sdk/sbf/* $out/bin/platform-tools-sdk/sbf/
+    '';
 
-  # We need to preserve metadata in .rlib, which might get stripped on macOS. See https://github.com/NixOS/nixpkgs/issues/218712
-  stripExclude = [ "*.rlib" ];
+    # A bit ugly, but liblldb.so uses libedit.so.2 and nix provides libedit.so
+    postFixup = lib.optionals stdenv.isLinux ''
+      patchelf --replace-needed libedit.so.2 libedit.so $out/bin/platform-tools-sdk/sbf/dependencies/platform-tools/llvm/lib/liblldb.so.19.1.7-rust-dev
+    '';
 
-  meta = with lib; {
-    description = "Solana Platform Tools";
-    homepage = "https://solana.com";
-    platforms = platforms.aarch64 ++ platforms.unix;
-  };
+    # We need to preserve metadata in .rlib, which might get stripped on macOS. See https://github.com/NixOS/nixpkgs/issues/218712
+    stripExclude = ["*.rlib"];
 
-  passthru = {
-    otherVersions = builtins.attrNames versionMapping;
-  };
-}
+    meta = with lib; {
+      description = "Solana Platform Tools";
+      homepage = "https://solana.com";
+      platforms = platforms.aarch64 ++ platforms.unix;
+    };
+
+    passthru = {
+      otherVersions = builtins.attrNames versionMapping;
+    };
+  }

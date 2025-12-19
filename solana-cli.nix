@@ -16,31 +16,26 @@
   makeRustPlatform,
   rust-bin,
   crane,
-  # Taken from https://github.com/solana-labs/solana/blob/master/scripts/cargo-install-all.sh#L84
-  solanaPkgs ? [
-    "agave-install"
-    "agave-install-init"
-    "agave-ledger-tool"
-    "agave-validator"
-    "agave-watchtower"
-    "cargo-build-sbf"
-    "cargo-test-sbf"
-    "rbpf-cli"
-    "solana"
-    "solana-bench-tps"
-    "solana-faucet"
-    "solana-gossip"
-    "solana-keygen"
-    "solana-log-analyzer"
-    "solana-net-shaper"
-    "solana-dos"
-    "solana-stake-accounts"
-    "solana-test-validator"
-    "solana-tokens"
-    "solana-genesis"
-  ],
-}:
-let
+  # Essential binaries for Solana application development with Agave 3.1.2
+  solanaPkgs ?
+    [
+      "cargo-build-sbf"
+      "cargo-test-sbf"
+      "solana"
+      "solana-faucet"
+      "solana-gossip"
+      "agave-install"
+      "solana-keygen"
+      "agave-validator"
+      "solana-test-validator"
+      "agave-watchtower"
+    ]
+    ++ [
+      # XXX: Ensure `solana-genesis` is built LAST!
+      # See https://github.com/solana-labs/solana/issues/5826
+      "solana-genesis"
+    ],
+}: let
   version = solana-source.version;
   src = solana-source.src;
 
@@ -53,7 +48,8 @@ let
   craneLib = crane.overrideToolchain rust;
 
   inherit (darwin.apple_sdk_11_0) Libsystem;
-  inherit (darwin.apple_sdk_11_0.frameworks)
+  inherit
+    (darwin.apple_sdk_11_0.frameworks)
     System
     IOKit
     AppKit
@@ -84,7 +80,7 @@ let
         rustPlatform.bindgenHook
         makeWrapper
       ]
-      ++ lib.optionals stdenv.isLinux [ udev ]
+      ++ lib.optionals stdenv.isLinux [udev]
       ++ lib.optionals stdenv.isDarwin [
         libcxx
         IOKit
@@ -110,46 +106,44 @@ let
   };
 
   cargoArtifacts = craneLib.buildDepsOnly (
-    commonArgs
+    (builtins.removeAttrs commonArgs ["src"])
     // {
-      # inherit cargoVendorDir;
       # specify dummySrc manually to avoid errors when parsing the manifests for target-less crates
       # such as client-test. The sources rarely change in this context so it shouldn't matter much
-      # TODO: use proper (custom) dummySrc
       dummySrc = src;
     }
   );
 in
-craneLib.buildPackage (
-  commonArgs
-  // {
-    inherit cargoArtifacts;
+  craneLib.buildPackage (
+    commonArgs
+    // {
+      inherit cargoArtifacts;
 
-    postInstall = ''
-      mkdir -p $out/bin/platform-tools-sdk/sbf
-      cp -a ./platform-tools-sdk/sbf/* $out/bin/platform-tools-sdk/sbf/
+      postInstall = ''
+        mkdir -p $out/bin/platform-tools-sdk/sbf
+        cp -a ./platform-tools-sdk/sbf/* $out/bin/platform-tools-sdk/sbf/
 
-      rust=${solana-platform-tools}/bin/platform-tools-sdk/sbf/dependencies/platform-tools/rust/bin
-      sbfsdkdir=${solana-platform-tools}/bin/platform-tools-sdk/sbf
-      wrapProgram $out/bin/cargo-build-sbf \
-        --prefix PATH : "$rust" \
-        --set SBF_SDK_PATH "$sbfsdkdir" \
-        --append-flags --no-rustup-override \
-        --append-flags --skip-tools-install
-    '';
+        rust=${solana-platform-tools}/bin/platform-tools-sdk/sbf/dependencies/platform-tools/rust/bin
+        sbfsdkdir=${solana-platform-tools}/bin/platform-tools-sdk/sbf
+        wrapProgram $out/bin/cargo-build-sbf \
+          --prefix PATH : "$rust" \
+          --set SBF_SDK_PATH "$sbfsdkdir" \
+          --append-flags --no-rustup-override \
+          --append-flags --skip-tools-install
+      '';
 
-    meta = with lib; {
-      mainProgram = "solana";
-      description = "Web-Scale Blockchain for fast, secure, scalable, decentralized apps and marketplaces. ";
-      homepage = "https://solana.com";
-      license = licenses.asl20;
-      maintainers = with maintainers; [
-        netfox
-        happysalada
-      ];
-      platforms = platforms.unix;
-    };
+      meta = with lib; {
+        mainProgram = "solana";
+        description = "Web-Scale Blockchain for fast, secure, scalable, decentralized apps and marketplaces. ";
+        homepage = "https://solana.com";
+        license = licenses.asl20;
+        maintainers = with maintainers; [
+          netfox
+          happysalada
+        ];
+        platforms = platforms.unix;
+      };
 
-    passthru.updateScript = nix-update-script { };
-  }
-)
+      passthru.updateScript = nix-update-script {};
+    }
+  )
